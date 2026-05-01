@@ -1,0 +1,167 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     Florida E-Filing ECF v3 — XSD Placeholder
+     
+     THIS IS A STRUCTURAL PLACEHOLDER ONLY.
+     
+     The official Florida XSD schemas are proprietary and are only provided 
+     after completing the TPV application process with the Florida Courts 
+     E-Filing Authority (FCEFA).
+     
+     Reference:
+       https://www.floridacourts.org/core/fileparse.php/490/urlt/TPV-Application.pdf
+     
+     DO NOT use this schema for live submissions. Replace with the official
+     Florida XSD files received from FCEFA after certification.
+     
+     Expected official schemas:
+       - florida-ecf-v3-filing.xsd       (filing envelope)
+       - florida-ecf-v3-case.xsd         (case information)  
+       - florida-ecf-v3-documents.xsd    (document manifest)
+       - florida-ecf-v3-fees.xsd         (fee tender)
+       - florida-ecf-v3-response.xsd     (portal response)
+     
+     Step 1 of the 7-Step Credentialed API Swap Plan.
+     ───────────────────────────────────────────────────────────────────────── -->
+
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:ecf="urn:oasis:names:tc:legalxml-courtfiling:schema:xsd:CommonTypes-4.0"
+  targetNamespace="urn:florida:courts:ecf:v3:simulator"
+  elementFormDefault="qualified"
+  version="3.0-SIMULATOR-PLACEHOLDER"
+>
+
+  <!--
+    NOTE: This is the SIMULATOR'S internal schema used for shape validation only.
+    The real Florida portal validates against OASIS LegalXML ECF 4.0 extensions
+    defined by FCEFA. Replace these types with the official schemas when received.
+  -->
+
+  <!-- ── Filing Envelope ─────────────────────────────────────────────────── -->
+  <xs:element name="FilingEnvelope">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="FilingHeader"    type="FilingHeaderType" />
+        <xs:element name="CaseInformation" type="CaseInformationType" />
+        <xs:element name="Documents"       type="DocumentsType" />
+        <xs:element name="FeeTender"       type="FeeTenderType" minOccurs="0" />
+      </xs:sequence>
+      <xs:attribute name="schemaVersion" type="xs:string" use="required" />
+      <xs:attribute name="submissionId"  type="xs:string" use="required" />
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ── Filing Header ──────────────────────────────────────────────────── -->
+  <xs:complexType name="FilingHeaderType">
+    <xs:sequence>
+      <xs:element name="SubmittedBy">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="AttorneyName"      type="xs:string" />
+            <xs:element name="FloridaBarNumber"  type="xs:string" />
+            <xs:element name="FirmName"          type="xs:string" minOccurs="0" />
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="CourtCode"      type="xs:string" />
+      <xs:element name="FilingType"     type="FilingTypeEnum" />
+      <xs:element name="ReferenceId"    type="xs:string" minOccurs="0" />
+      <xs:element name="SubmissionTime" type="xs:dateTime" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ── Case Information ───────────────────────────────────────────────── -->
+  <xs:complexType name="CaseInformationType">
+    <xs:sequence>
+      <xs:element name="CaseId"   type="xs:string" />
+      <xs:element name="CaseType" type="CaseTypeEnum" />
+      <xs:element name="Parties">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Party" type="PartyType" maxOccurs="unbounded" />
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ── Document Manifest ──────────────────────────────────────────────── -->
+  <xs:complexType name="DocumentsType">
+    <xs:sequence>
+      <xs:element name="Document" type="DocumentType" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ── Fee Tender ─────────────────────────────────────────────────────── -->
+  <xs:complexType name="FeeTenderType">
+    <xs:sequence>
+      <xs:element name="FilingFee"  type="xs:decimal" />
+      <xs:element name="SummonsFee" type="xs:decimal" minOccurs="0" />
+      <xs:element name="Total"      type="xs:decimal" />
+      <xs:element name="Currency"   type="xs:string" fixed="USD" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ── Shared Types ───────────────────────────────────────────────────── -->
+  <xs:complexType name="PartyType">
+    <xs:sequence>
+      <xs:element name="Role"       type="PartyRoleEnum" />
+      <xs:element name="FullName"   type="xs:string" />
+      <xs:element name="Address"    type="xs:string" minOccurs="0" />
+      <xs:element name="BarNumber"  type="xs:string" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DocumentType">
+    <xs:sequence>
+      <xs:element name="DocumentId" type="xs:string" />
+      <xs:element name="Type"       type="DocumentTypeEnum" />
+      <xs:element name="FileName"   type="xs:string" />
+      <xs:element name="SHA256"     type="xs:string" />
+      <xs:element name="IsLead"     type="xs:boolean" />
+      <xs:element name="SizeBytes"  type="xs:integer" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ── Enumerations ───────────────────────────────────────────────────── -->
+  <xs:simpleType name="FilingTypeEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="new_case" />
+      <xs:enumeration value="subsequent" />
+      <xs:enumeration value="cross_claim" />
+      <xs:enumeration value="counterclaim" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CaseTypeEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="personal_injury" />
+      <xs:enumeration value="medical_malpractice" />
+      <xs:enumeration value="property_damage" />
+      <xs:enumeration value="wrongful_death" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PartyRoleEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="plaintiff" />
+      <xs:enumeration value="defendant" />
+      <xs:enumeration value="respondent" />
+      <xs:enumeration value="petitioner" />
+      <xs:enumeration value="intervenor" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DocumentTypeEnum">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="complaint" />
+      <xs:enumeration value="summons" />
+      <xs:enumeration value="cover_sheet" />
+      <xs:enumeration value="medical_summary" />
+      <xs:enumeration value="motion" />
+      <xs:enumeration value="answer" />
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>
