@@ -164,7 +164,7 @@ export async function generateComplaint(
        .fontSize(60).font('Helvetica-Bold')
        .text('AI DRAFT', 0, doc.page.height / 2 - 30, {
          align: 'center', width: doc.page.width, rotate: -45,
-       });
+        } as any);
 
     doc.end();
   });
