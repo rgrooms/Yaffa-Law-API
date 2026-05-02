@@ -86,7 +86,7 @@ export async function generateStampedComplaint(
     // FILED stamp diagonal watermark
     doc.fillColor('#1a3a6b').opacity(0.04)
        .fontSize(80).font('Helvetica-Bold')
-       .text('FILED', 0, doc.page.height / 2, { align: 'center', width: doc.page.width, rotate: -45 });
+       .text('FILED', 0, doc.page.height / 2, { align: 'center', width: doc.page.width, rotate: -45 } as any);
 
     doc.end();
   });

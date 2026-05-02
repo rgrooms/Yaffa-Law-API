@@ -2,13 +2,16 @@
   "name": "yaffa-law-api",
   "version": "1.0.0",
   "description": "Yaffa Law Legal OS — Backend API",
-  "main": "src/server.ts",
+  "main": "dist/server.js",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "nodemon --exec tsx src/server.ts",
     "dev:api": "nodemon --exec tsx src/server.ts",
     "dev:full": "concurrently --kill-others-on-fail --names 'REDIS,API,UI' --prefix-colors 'red,blue,green' \"bash scripts/start-redis.sh && sleep 1\" \"npm run dev:api\" \"cd ../yaffa-law-demo && npm run dev\"",
-    "start": "tsx src/server.ts",
+    "start": "node dist/server.js",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
