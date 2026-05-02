@@ -22,7 +22,7 @@ import webhookRoutes   from './routes/webhooks';
 import simRoutes       from './routes/sim';
 import courtRoutes     from './routes/court';
 
-// Queue + worker
+// Queue + worker — imported after dotenv so env vars are available
 import { courtFilingQueue }                from './queue/courtFilingQueue';
 import { courtFilingWorker, setSocketIO }  from './queue/courtFilingWorker';
 import { redisConnection }                 from './queue/redis';
@@ -30,19 +30,24 @@ import { getActiveProviderName }           from './court/courtProviderFactory';
 
 const app    = express();
 const server = http.createServer(app);
-const PORT   = process.env.PORT || 4000;
+const PORT   = Number(process.env.PORT) || 4000;
 
+// ── CORS — accept the staging Railway domain + local dev ──────────────────────
+const FRONTEND_URL   = process.env.FRONTEND_URL || 'http://localhost:5173';
 const ALLOWED_ORIGINS = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
+  FRONTEND_URL,
+  'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:5175',
+  // Allow any Railway subdomain during staging (tighten in production)
+  /https:\/\/.*\.up\.railway\.app$/,
 ];
 
 // ── Socket.io — /court namespace ──────────────────────────────────────────────
 const io = new SocketIO(server, {
   cors: { origin: ALLOWED_ORIGINS, credentials: true },
-  pingInterval: 10_000,   // heartbeat every 10s
-  pingTimeout:  30_000,   // disconnect if no pong in 30s
+  pingInterval: 10_000,
+  pingTimeout:  30_000,
 });
 
 const courtNS = io.of('/court');
@@ -50,14 +55,12 @@ const courtNS = io.of('/court');
 courtNS.on('connection', (socket) => {
   console.log(`[Socket.io/court] Client connected: ${socket.id}`);
 
-  // Client subscribes to a specific submission
   socket.on('subscribe', (submissionId: string) => {
     socket.join(`filing:${submissionId}`);
     socket.emit('subscribed', { submissionId });
     console.log(`[Socket.io/court] ${socket.id} → filing:${submissionId}`);
   });
 
-  // Client unsubscribes
   socket.on('unsubscribe', (submissionId: string) => {
     socket.leave(`filing:${submissionId}`);
     console.log(`[Socket.io/court] ${socket.id} ← filing:${submissionId}`);
@@ -68,7 +71,7 @@ courtNS.on('connection', (socket) => {
   );
 });
 
-// Inject the full io instance (worker emits to /court namespace via courtNS)
+// Inject io into worker (done before startup to avoid timing issues)
 setSocketIO(io);
 
 // ── Bull Board ────────────────────────────────────────────────────────────────
@@ -81,7 +84,9 @@ createBullBoard({
 });
 
 // ── Security middleware ───────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  crossOriginEmbedderPolicy: false, // allow Bull Board UI assets
+}));
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -94,20 +99,28 @@ app.use(rateLimit({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ── Health check ──────────────────────────────────────────────────────────────
+// ── Health check — always responds, reports subsystem status ─────────────────
+// NOTE: This MUST be registered before queue/worker startup so Railway's
+// health check probe can succeed even if Redis is still connecting.
+let workerReady  = false;
+let redisReady   = false;
+
+redisConnection.on('ready', () => { redisReady = true; });
+
 app.get('/health', (_req, res) => {
-  const workerRunning = courtFilingWorker.isRunning();
-  res.json({
+  let workerRunning = false;
+  try { workerRunning = courtFilingWorker.isRunning(); } catch (_) { /* worker not init */ }
+
+  res.status(200).json({
     status:     'ok',
     service:    'yaffa-law-api',
     ts:         new Date().toISOString(),
-    worker:     workerRunning ? 'running' : 'idle',
     provider:   getActiveProviderName(),
+    redis:      redisReady ? 'connected' : 'connecting',
+    worker:     workerRunning ? 'running' : (workerReady ? 'idle' : 'starting'),
     queues:     { courtFiling: 'online' },
-    sockets:    {
-      namespace: '/court',
-      clients:   courtNS.sockets.size,
-    },
+    sockets:    { namespace: '/court', clients: courtNS.sockets.size },
+    env:        process.env.NODE_ENV || 'development',
   });
 });
 
@@ -133,12 +146,30 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
-server.listen(PORT, () => {
-  console.log(`\n🏛️  Yaffa Law API   → http://localhost:${PORT}`);
-  console.log(`   Health          → http://localhost:${PORT}/health`);
-  console.log(`   Bull Board      → http://localhost:${PORT}/admin/queues`);
-  console.log(`   Socket.io       → ws://localhost:${PORT}/court\n`);
+// ── Start — bind port FIRST, init queue/worker AFTER ─────────────────────────
+// Binding first ensures Railway's health check always gets a 200 even if
+// Redis is still connecting.  Worker init is non-blocking and non-fatal.
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🏛️  Yaffa Law API   → http://0.0.0.0:${PORT}`);
+  console.log(`   Health          → http://0.0.0.0:${PORT}/health`);
+  console.log(`   Bull Board      → http://0.0.0.0:${PORT}/admin/queues`);
+  console.log(`   Socket.io       → ws://0.0.0.0:${PORT}/court`);
+  console.log(`   Court Provider  → ${getActiveProviderName()}`);
+  console.log(`   Node.js         → ${process.version}\n`);
+
+  // Non-blocking worker startup — errors here do NOT crash the server
+  (async () => {
+    try {
+      await redisConnection.ping();
+      console.log('[Server] Redis ping OK');
+      workerReady = true;
+      console.log('[Server] BullMQ worker ready');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Server] Redis unavailable — BullMQ worker disabled: ${msg}`);
+      console.warn('[Server] API running without queue support. Filing status updates will use polling fallback.');
+    }
+  })();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
@@ -146,12 +177,9 @@ async function shutdown(signal: string) {
   console.log(`\n[Server] ${signal} received — shutting down gracefully…`);
   try {
     server.close(() => console.log('[Server] HTTP server closed'));
-    await courtFilingWorker.close();
-    console.log('[Server] BullMQ worker closed');
-    await courtFilingQueue.close();
-    console.log('[Server] BullMQ queue closed');
-    await redisConnection.quit();
-    console.log('[Server] Redis connection closed');
+    try { await courtFilingWorker.close(); console.log('[Server] BullMQ worker closed'); } catch (_) {}
+    try { await courtFilingQueue.close();  console.log('[Server] BullMQ queue closed');  } catch (_) {}
+    try { await redisConnection.quit();    console.log('[Server] Redis closed');          } catch (_) {}
     process.exit(0);
   } catch (err) {
     console.error('[Server] Error during shutdown:', err);
@@ -162,6 +190,10 @@ async function shutdown(signal: string) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT',  () => shutdown('SIGINT'));
 
-// Export courtNS for use in worker
+// Catch any unhandled rejections so they don't kill the process
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled rejection:', reason);
+});
+
 export { courtNS };
 export default app;
